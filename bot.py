@@ -47,49 +47,34 @@ def save_watchlists():
 
 # Check Instagram account status
 def check_account_status(username):
-    # Use the normal Instagram profile page (ScraperAPI allows this)
     profile_url = f"https://www.instagram.com/{username}/"
-
-    scrape_url = "http://api.scraperapi.com"
-    params = {
-        "api_key": SCRAPERAPI_KEY,
-        "url": profile_url
-    }
-
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept-Language": "en-US,en;q=0.9"
     }
 
     try:
-        r = requests.get(scrape_url, headers=headers, params=params, timeout=20)
+        r = requests.get(profile_url, headers=headers, timeout=20)
         page_text = r.text
 
-        # Debug log
-        # print("Response snippet:", page_text[:500])
-
-        # Case 1: Direct 404 from Instagram
         if r.status_code == 404 or "Page Not Found" in page_text:
             return "BANNED / NOT FOUND"
 
-        # Case 2: Suspended or unavailable
-        unavailable_phrases = [
+        if any(phrase in page_text.lower() for phrase in [
             "sorry, this page isn't available",
             "the link you followed may be broken",
             "page may have been removed"
-        ]
-        if any(phrase.lower() in page_text.lower() for phrase in unavailable_phrases):
+        ]):
             return "BANNED / SUSPENDED"
 
-        # Case 3: Profile metadata check (valid account)
         if "profilePage_" in page_text or '"og:title"' in page_text:
             return "ACTIVE"
 
-        # If nothing matches, response may be HTML error or block
-        return f"UNEXPECTED RESPONSE (maybe HTML error): {page_text[:100]}..."
+        return f"UNKNOWN RESPONSE: {page_text[:100]}..."
 
     except Exception as e:
         return f"ERROR: {e}"
+
 
 
 # Telegram commands
@@ -189,6 +174,7 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
 
