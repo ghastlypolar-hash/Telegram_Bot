@@ -63,17 +63,23 @@ def check_account_status(username):
     try:
         r = requests.get(scrape_url, headers=headers, params=params, timeout=20)
 
-        # Instagram returns 404 for suspended/banned
+        print("Status code:", r.status_code)
+        print("Raw response:", r.text[:500])  # print first 500 chars for debug
+
+        # If Instagram returns 404
         if r.status_code == 404:
             return "BANNED / NOT FOUND"
 
-        data = r.json()
+        # Only try to parse JSON if response is not empty and looks like JSON
+        if r.text.strip().startswith("{"):
+            data = r.json()
 
-        # If profile exists → ACTIVE
-        if "data" in data and data["data"].get("user"):
-            return "ACTIVE"
+            if "data" in data and data["data"].get("user"):
+                return "ACTIVE"
 
-        return "BANNED / SUSPENDED"
+            return "BANNED / SUSPENDED"
+        else:
+            return f"UNEXPECTED RESPONSE (maybe HTML): {r.text[:100]}..."
 
     except Exception as e:
         return f"ERROR: {e}"
@@ -176,6 +182,7 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
 
