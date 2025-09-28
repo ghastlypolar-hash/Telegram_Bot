@@ -3,15 +3,20 @@ import json
 import time
 import os
 import threading
+from dotenv import load_dotenv
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 #BOT_TOKEN = "8382132782:AAEUK3WKhF7HzNlvOLVhl51O500JEE5u8Lg"
+load_dotenv()  # take environment variables from .env
+
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 SCRAPER_API_KEY = os.environ.get("SCRAPER_API_KEY")
 WATCHLIST_FILE = "watchlist.json"
 CHECK_INTERVAL = 20  # minutes
+
+print("ScraperAPI Key:", SCRAPER_API_KEY)
 
 flask_app = Flask("")
 
@@ -170,6 +175,7 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
 
