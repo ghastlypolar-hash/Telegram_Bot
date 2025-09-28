@@ -47,7 +47,8 @@ def save_watchlists():
 
 # Check Instagram account status
 def check_account_status(username):
-    profile_url = f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}"
+    # Use the normal Instagram profile page (ScraperAPI allows this)
+    profile_url = f"https://www.instagram.com/{username}/"
 
     scrape_url = "http://api.scraperapi.com"
     params = {
@@ -57,29 +58,35 @@ def check_account_status(username):
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9"
     }
 
     try:
         r = requests.get(scrape_url, headers=headers, params=params, timeout=20)
+        page_text = r.text
 
-        print("Status code:", r.status_code)
-        print("Raw response:", r.text[:500])  # print first 500 chars for debug
+        # Debug log
+        # print("Response snippet:", page_text[:500])
 
-        # If Instagram returns 404
-        if r.status_code == 404:
+        # Case 1: Direct 404 from Instagram
+        if r.status_code == 404 or "Page Not Found" in page_text:
             return "BANNED / NOT FOUND"
 
-        # Only try to parse JSON if response is not empty and looks like JSON
-        if r.text.strip().startswith("{"):
-            data = r.json()
-
-            if "data" in data and data["data"].get("user"):
-                return "ACTIVE"
-
+        # Case 2: Suspended or unavailable
+        unavailable_phrases = [
+            "sorry, this page isn't available",
+            "the link you followed may be broken",
+            "page may have been removed"
+        ]
+        if any(phrase.lower() in page_text.lower() for phrase in unavailable_phrases):
             return "BANNED / SUSPENDED"
-        else:
-            return f"UNEXPECTED RESPONSE (maybe HTML): {r.text[:100]}..."
+
+        # Case 3: Profile metadata check (valid account)
+        if "profilePage_" in page_text or '"og:title"' in page_text:
+            return "ACTIVE"
+
+        # If nothing matches, response may be HTML error or block
+        return f"UNEXPECTED RESPONSE (maybe HTML error): {page_text[:100]}..."
 
     except Exception as e:
         return f"ERROR: {e}"
@@ -182,6 +189,7 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
 
