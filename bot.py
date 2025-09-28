@@ -3,6 +3,8 @@ import json
 import time
 import os
 import threading
+import instaloader
+from instaloader import Profile, InstaloaderException
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -40,45 +42,86 @@ def save_watchlists():
 
 # Check Instagram account status
 def check_account_status(username):
-    profile_url = f"https://www.instagram.com/{username}/"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-    }
+    """
+    Returns:
+      - "ACTIVE" -> profile exists (public)
+      - "BANNED / NOT FOUND" -> 404 or profile doesn't exist
+      - "PRIVATE" -> profile is private (instaloader indicates private; still 'active')
+      - "RATE LIMITED" -> Instagram blocked / rate-limited us
+      - "ERROR: <msg>" -> other errors
+    """
 
+    # 1) Try Instaloader (no login). This will work for many public profiles.
     try:
-        r = requests.get(profile_url, headers=headers, timeout=10)
-        page_text = r.text.lower()
+        L = instaloader.Instaloader(dirname_pattern=None, download_pictures=False,
+                                    download_videos=False, download_comments=False,
+                                    save_metadata=False, compress_json=False)
+        # do not call L.login(), we want no-login operation
+        try:
+            profile = Profile.from_username(L.context, username)
+            # If we get a Profile object, the user exists.
+            # Check if profile is private or public:
+            if profile.is_private:
+                return "PRIVATE"
+            else:
+                return "ACTIVE"
+        except instaloader.exceptions.ProfileNotExistsException:
+            return "BANNED / NOT FOUND"
+        except InstaloaderException as ie:
+            # Instaloader-specific problems (rate-limited, blocked, etc.)
+            # We'll fall through to the fallback HTML check below.
+            debug_msg = str(ie)
+            # If it's an obvious rate-limit or login prompt, return RATE LIMITED
+            if "429" in debug_msg or "rate" in debug_msg.lower() or "login" in debug_msg.lower():
+                return "RATE LIMITED"
+            # otherwise continue to fallback
+        except Exception as e:
+            # unexpected error from instaloader; fall back
+            pass
 
-        # Case 1: Direct 404 response
-        if r.status_code == 404:
+    except Exception:
+        # If instaloader import/init or context creation fails, fall back
+        pass
+
+    # 2) Fallback: plain HTTP HTML check (same logic you had, useful when instaloader fails)
+    try:
+        profile_url = f"https://www.instagram.com/{username}/"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        }
+
+        r = requests.get(profile_url, headers=headers, timeout=15)
+        page_text = (r.text or "").lower()
+
+        if r.status_code == 404 or "page not found" in page_text:
             return "BANNED / NOT FOUND"
 
-        # Case 2: Rate limited
         if r.status_code == 429:
-            return "RATE LIMITED – too many requests"
+            return "RATE LIMITED"
 
-        # Case 3: Known unavailable phrases
         unavailable_phrases = [
             "sorry, this page isn't available",
             "the link you followed may be broken",
-            "page may have been removed", "page isn&#39;t available"
+            "page may have been removed",
+            "page isn&#39;t available",
+            "this account is private"   # sometimes helpful
         ]
         if any(phrase in page_text for phrase in unavailable_phrases):
+            # note: "this account is private" means active but private — you may want PRIVATE instead
+            if "this account is private" in page_text:
+                return "PRIVATE"
             return "BANNED / SUSPENDED"
 
-        # Case 4: Check if username appears in the HTML
+        # If username appears in the HTML, we typically have an active profile (public or partial)
         if username.lower() in page_text:
             return "ACTIVE"
 
-        # Case 5: Check for profile metadata (extra safeguard)
-        if 'og:title' in page_text or 'profilepage_' in page_text:
-            return "ACTIVE"
-
-        # If none matched
-        return "UNKNOWN (couldn’t detect properly)"
+        # If none of these match, return unknown but include a short snippet for debug
+        snippet = page_text[:300].replace("\n", " ")
+        return f"UNKNOWN RESPONSE: {snippet}"
 
     except Exception as e:
         return f"ERROR: {e}"
@@ -181,4 +224,3 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
-
