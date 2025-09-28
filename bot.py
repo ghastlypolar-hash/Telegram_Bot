@@ -3,21 +3,19 @@ import json
 import time
 import os
 import threading
-#from dotenv import load_dotenv
+from dotenv import load_dotenv
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-#BOT_TOKEN = "8382132782:AAEUK3WKhF7HzNlvOLVhl51O500JEE5u8Lg"
-#load_dotenv()  # Load from .env
+# Load environment variables
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-#SCRAPERAPI_KEY = os.getenv("SCRAPERAPI_KEY")  # consistent name!
+SCRAPERAPI_KEY = os.getenv("SCRAPERAPI_KEY")  # not used in Quick Test
 
 WATCHLIST_FILE = "watchlist.json"
 CHECK_INTERVAL = 20  # minutes
-
-#print("ScraperAPI Key:", SCRAPERAPI_KEY)
 
 flask_app = Flask("")
 
@@ -39,13 +37,12 @@ except FileNotFoundError:
     watchlists = {}
 
 
-# Save watchlists
 def save_watchlists():
     with open(WATCHLIST_FILE, "w") as f:
         json.dump(watchlists, f)
 
 
-# Check Instagram account status
+# ✅ Quick Test Without ScraperAPI
 def check_account_status(username):
     profile_url = f"https://www.instagram.com/{username}/"
     headers = {
@@ -57,9 +54,11 @@ def check_account_status(username):
         r = requests.get(profile_url, headers=headers, timeout=20)
         page_text = r.text
 
+        # Case 1: Direct 404 or "Page Not Found"
         if r.status_code == 404 or "Page Not Found" in page_text:
             return "BANNED / NOT FOUND"
 
+        # Case 2: Suspended/unavailable phrases
         if any(phrase in page_text.lower() for phrase in [
             "sorry, this page isn't available",
             "the link you followed may be broken",
@@ -67,14 +66,15 @@ def check_account_status(username):
         ]):
             return "BANNED / SUSPENDED"
 
+        # Case 3: Profile metadata = valid account
         if "profilePage_" in page_text or '"og:title"' in page_text:
             return "ACTIVE"
 
+        # Fallback → show first 100 chars for debugging
         return f"UNKNOWN RESPONSE: {page_text[:100]}..."
 
     except Exception as e:
         return f"ERROR: {e}"
-
 
 
 # Telegram commands
@@ -132,7 +132,6 @@ async def check_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔎 {username} → {status}")
 
 
-# Background monitoring
 async def monitor_accounts(context: ContextTypes.DEFAULT_TYPE):
     for chat_id, usernames in watchlists.items():
         for username in usernames:
@@ -143,7 +142,6 @@ async def monitor_accounts(context: ContextTypes.DEFAULT_TYPE):
                     text=f"⚠ ALERT: {username} is {status}")
 
 
-# Store chat IDs whenever someone interacts with the bot
 async def register_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if "chat_ids" not in context.application.bot_data:
@@ -152,7 +150,6 @@ async def register_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.application.bot_data["chat_ids"].append(chat_id)
 
 
-# Main
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 # Handlers
@@ -160,27 +157,12 @@ app.add_handler(CommandHandler("add", add_account))
 app.add_handler(CommandHandler("remove", remove_account))
 app.add_handler(CommandHandler("list", list_accounts))
 app.add_handler(CommandHandler("check", check_account))
-app.add_handler(CommandHandler("start",
-                               register_chat))  # registers chat automatically
+app.add_handler(CommandHandler("start", register_chat))
 
 app.job_queue.run_repeating(monitor_accounts,
                             interval=CHECK_INTERVAL * 60,
                             first=10)
 
 if __name__ == "__main__":
-    # Start Flask server in another thread
     threading.Thread(target=run_flask).start()
-
-    # Start the Telegram bot
-
     app.run_polling()
-
-
-
-
-
-
-
-
-
-
