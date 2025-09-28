@@ -56,7 +56,11 @@ def check_account_status(username):
         if r.status_code == 404:
             return "BANNED / NOT FOUND"
 
-        # Case 2: Known unavailable phrases
+        # Case 2: Rate limited
+        if r.status_code == 429:
+            return "RATE LIMITED – too many requests"
+
+        # Case 3: Known unavailable phrases
         unavailable_phrases = [
             "sorry, this page isn't available",
             "the link you followed may be broken",
@@ -65,12 +69,16 @@ def check_account_status(username):
         if any(phrase in page_text for phrase in unavailable_phrases):
             return "BANNED / SUSPENDED"
 
-        # Case 3: Check if page contains Instagram profile metadata
-        if 'og:title' not in page_text and 'profilepage_' not in page_text:
-            return "BANNED / SUSPENDED"
+        # Case 4: Check if username appears in the HTML
+        if username.lower() in page_text:
+            return "ACTIVE"
 
-        # ✅ If reached here → profile exists
-        return "ACTIVE"
+        # Case 5: Check for profile metadata (extra safeguard)
+        if 'og:title' in page_text or 'profilepage_' in page_text:
+            return "ACTIVE"
+
+        # If none matched
+        return "UNKNOWN (couldn’t detect properly)"
 
     except Exception as e:
         return f"ERROR: {e}"
@@ -173,3 +181,4 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
