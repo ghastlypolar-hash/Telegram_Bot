@@ -40,7 +40,7 @@ def save_watchlists():
 
 # Check Instagram account status
 def check_account_status(username):
-    profile_url = f"https://www.instagram.com/{username}/"
+    profile_url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept-Language": "en-US,en;q=0.9"
@@ -171,3 +171,4 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
