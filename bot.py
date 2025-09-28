@@ -41,11 +41,9 @@ def save_watchlists():
 
 # Check Instagram account status
 def check_account_status(username):
-    # Instagram profile URL
-    profile_url = f"https://www.instagram.com/{username}/"
+    profile_url = f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}"
 
-    # ScraperAPI endpoint
-    scrape_url = f"http://api.scraperapi.com"
+    scrape_url = "http://api.scraperapi.com"
     params = {
         "api_key": SCRAPER_API_KEY,
         "url": profile_url
@@ -53,32 +51,23 @@ def check_account_status(username):
 
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept-Language": "en-US,en;q=0.9"
+        "Accept": "application/json",
     }
 
     try:
         r = requests.get(scrape_url, headers=headers, params=params, timeout=20)
-        page_text = r.text.lower()
 
-        # Case 1: Direct 404 response
+        # Instagram returns 404 for suspended/banned
         if r.status_code == 404:
             return "BANNED / NOT FOUND"
 
-        # Case 2: Known unavailable phrases
-        unavailable_phrases = [
-            "sorry, this page isn't available",
-            "the link you followed may be broken",
-            "page may have been removed", "page isn&#39;t available"
-        ]
-        if any(phrase in page_text for phrase in unavailable_phrases):
-            return "BANNED / SUSPENDED"
+        data = r.json()
 
-        # Case 3: Check if page contains Instagram profile metadata
-        if 'og:title' not in page_text and 'profilepage_' not in page_text:
-            return "BANNED / SUSPENDED"
+        # If profile exists → ACTIVE
+        if "data" in data and data["data"].get("user"):
+            return "ACTIVE"
 
-        # ✅ If reached here → profile exists
-        return "ACTIVE"
+        return "BANNED / SUSPENDED"
 
     except Exception as e:
         return f"ERROR: {e}"
@@ -181,5 +170,6 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
