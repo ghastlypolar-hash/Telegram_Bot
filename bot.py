@@ -135,28 +135,24 @@ def check_account_status_http(username):
         r = requests.get(profile_url, headers=headers, timeout=15)
         page_text = (r.text or "").lower()
 
-        if r.status_code == 404 or "page not found" in page_text:
+        if r.status_code == 404 or "page not found" in page_text or "sorry, this page isn't available" in page_text:
             return "BANNED / NOT FOUND"
+
         if r.status_code == 429:
             return "RATE LIMITED"
 
-        unavailable_phrases = [
-            "sorry, this page isn't available",
-            "the link you followed may be broken",
-            "page may have been removed",
-            "page isn&#39;t available",
-            "this account is private"
-        ]
-        if any(phrase in page_text for phrase in unavailable_phrases):
-            if "this account is private" in page_text:
-                return "PRIVATE"
-            return "BANNED / SUSPENDED"
+        # If the profile is private (active but private)
+        if "this account is private" in page_text:
+            return "PRIVATE"
 
-        if username.lower() in page_text:
+        # If Instagram returns the standard profile JSON embedded in HTML, we can try parsing
+        if 'profilePage_' in page_text:
             return "ACTIVE"
 
+        # If none of these patterns match, treat as unknown
         snippet = page_text[:300].replace("\n", " ")
         return f"UNKNOWN RESPONSE: {snippet}"
+
     except Exception as e:
         return f"ERROR: {e}"
 
@@ -294,3 +290,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
