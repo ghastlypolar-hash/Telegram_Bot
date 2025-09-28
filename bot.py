@@ -9,6 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 #BOT_TOKEN = "8382132782:AAEUK3WKhF7HzNlvOLVhl51O500JEE5u8Lg"
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
+SCRAPER_API_KEY = os.environ.get("SCRAPER_API_KEY")
 WATCHLIST_FILE = "watchlist.json"
 CHECK_INTERVAL = 20  # minutes
 
@@ -40,14 +41,23 @@ def save_watchlists():
 
 # Check Instagram account status
 def check_account_status(username):
-    profile_url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
+    # Instagram profile URL
+    profile_url = f"https://www.instagram.com/{username}/"
+
+    # ScraperAPI endpoint
+    scrape_url = f"http://api.scraperapi.com"
+    params = {
+        "api_key": SCRAPER_API_KEY,
+        "url": profile_url
+    }
+
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept-Language": "en-US,en;q=0.9"
     }
 
     try:
-        r = requests.get(profile_url, headers=headers, timeout=10)
+        r = requests.get(scrape_url, headers=headers, params=params, timeout=20)
         page_text = r.text.lower()
 
         # Case 1: Direct 404 response
@@ -171,4 +181,5 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
