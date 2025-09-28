@@ -51,7 +51,7 @@ def check_account_status(username):
 
     scrape_url = "http://api.scraperapi.com"
     params = {
-        "api_key": SCRAPER_API_KEY,
+        "api_key": SCRAPERAPI_KEY,
         "url": profile_url
     }
 
@@ -176,6 +176,7 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
 
