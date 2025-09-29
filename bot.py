@@ -12,7 +12,7 @@ SEARCH_ENGINE_ID = os.environ.get("SEARCH_ENGINE_ID")
 #BOT_TOKEN = "8382132782:AAEUK3WKhF7HzNlvOLVhl51O500JEE5u8Lg"
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 WATCHLIST_FILE = "watchlist.json"
-CHECK_INTERVAL = 20  # minutes
+CHECK_INTERVAL = 10  # minutes
 
 flask_app = Flask("")
 
@@ -191,5 +191,6 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
