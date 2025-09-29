@@ -90,11 +90,21 @@ async def add_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if username not in watchlists[chat_id]:
         watchlists[chat_id].append(username)
         save_watchlists()
+
+        # Immediately check status
+        current_status = check_account_status(username)
+        if chat_id not in status_cache:
+            status_cache[chat_id] = {}
+        status_cache[chat_id][username] = current_status
+        save_status_cache()
+
         await update.message.reply_text(
-            f"✅ Added {username} to your watchlist.")
+            f"✅ Added {username} to your watchlist.\nStatus: {current_status}"
+        )
     else:
         await update.message.reply_text(
-            f"{username} is already in your watchlist.")
+            f"{username} is already in your watchlist."
+        )
 
 async def remove_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
@@ -144,12 +154,12 @@ async def monitor_accounts(context: ContextTypes.DEFAULT_TYPE):
             if last_status != current_status:
                 status_cache[chat_id][username] = current_status
                 save_status_cache()
-                
-                if last_status is not None:  # skip first check (optional)
-                    await context.bot.send_message(
-                        chat_id=int(chat_id),
-                        text=f"⚠ ALERT: {username} status changed → {current_status}"
-                    )
+
+                # Send alert even if it's the first check
+                await context.bot.send_message(
+                    chat_id=int(chat_id),
+                    text=f"⚠ ALERT: {username} status changed → {current_status}"
+                )
 
 # Store chat IDs whenever someone interacts with the bot
 async def register_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -181,4 +191,5 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
