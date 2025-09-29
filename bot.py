@@ -33,6 +33,17 @@ try:
 except FileNotFoundError:
     watchlists = {}
 
+# ------------------- NEW: status cache -------------------
+try:
+    with open("status_cache.json", "r") as f:
+        status_cache = json.load(f)
+except FileNotFoundError:
+    status_cache = {}
+
+def save_status_cache():
+    with open("status_cache.json", "w") as f:
+        json.dump(status_cache, f)
+# ---------------------------------------------------------
 
 # Save watchlists
 def save_watchlists():
@@ -123,13 +134,22 @@ async def check_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Background monitoring
 async def monitor_accounts(context: ContextTypes.DEFAULT_TYPE):
     for chat_id, usernames in watchlists.items():
+        if chat_id not in status_cache:
+            status_cache[chat_id] = {}
         for username in usernames:
-            status = check_account_status(username)
-            if status != "ACTIVE":
-                await context.bot.send_message(
-                    chat_id=int(chat_id),
-                    text=f"⚠ ALERT: {username} is {status}")
+            current_status = check_account_status(username)
+            last_status = status_cache[chat_id].get(username)
 
+            # Only alert if status changed
+            if last_status != current_status:
+                status_cache[chat_id][username] = current_status
+                save_status_cache()
+                
+                if last_status is not None:  # skip first check (optional)
+                    await context.bot.send_message(
+                        chat_id=int(chat_id),
+                        text=f"⚠ ALERT: {username} status changed → {current_status}"
+                    )
 
 # Store chat IDs whenever someone interacts with the bot
 async def register_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -138,7 +158,6 @@ async def register_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.application.bot_data["chat_ids"] = []
     if chat_id not in context.application.bot_data["chat_ids"]:
         context.application.bot_data["chat_ids"].append(chat_id)
-
 
 # Main
 app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -162,3 +181,4 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
