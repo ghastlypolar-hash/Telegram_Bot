@@ -152,24 +152,48 @@ async def check_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # Background monitoring
+# Background monitoring with safeguard
 async def monitor_accounts(context: ContextTypes.DEFAULT_TYPE):
     for chat_id, usernames in watchlists.items():
         if chat_id not in status_cache:
             status_cache[chat_id] = {}
         for username in usernames:
             current_status = check_account_status(username)
+
+            # Get last known status
             last_status = status_cache[chat_id].get(username)
 
-            # Only alert if status changed
-            if last_status != current_status:
-                status_cache[chat_id][username] = current_status
+            # If this is the first time, store it and continue
+            if last_status is None:
+                status_cache[chat_id][username] = {
+                    "confirmed": current_status,
+                    "pending": current_status
+                }
                 save_status_cache()
+                continue
 
-                # Send alert even if it's the first check
-                await context.bot.send_message(
-                    chat_id=int(chat_id),
-                    text=f"⚠ ALERT: {username} status changed → {current_status}"
-                )
+            # Handle the dict format
+            if isinstance(last_status, str):
+                # Upgrade old format to new dict format
+                last_status = {
+                    "confirmed": last_status,
+                    "pending": last_status
+                }
+                status_cache[chat_id][username] = last_status
+
+            # If current status == pending (2nd time), confirm and alert if changed
+            if current_status == last_status["pending"]:
+                if current_status != last_status["confirmed"]:
+                    status_cache[chat_id][username]["confirmed"] = current_status
+                    save_status_cache()
+                    await context.bot.send_message(
+                        chat_id=int(chat_id),
+                        text=f"⚠ ALERT: {username} status changed → {current_status}"
+                    )
+            else:
+                # First mismatch, store it as pending
+                status_cache[chat_id][username]["pending"] = current_status
+                save_status_cache()
 
 # Store chat IDs whenever someone interacts with the bot
 async def register_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -201,6 +225,7 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
 
