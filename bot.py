@@ -54,26 +54,36 @@ def save_watchlists():
 # Check Instagram account status
 def check_account_status(username):
     try:
-        query = f"site:instagram.com {username}"
-        url = f"https://www.googleapis.com/customsearch/v1"
-        params = {
-            "q": query,
-            "key": GOOGLE_API_KEY,
-            "cx": SEARCH_ENGINE_ID
-        }
-        r = requests.get(url, params=params, timeout=10)
-        data = r.json()
+        username = username.lower()
+        queries = [
+            f"site:instagram.com {username}",
+            f"https://www.instagram.com/{username}/",
+            f"instagram.com/{username}"
+        ]
 
-        # If no results found
-        if "items" not in data:
-            return "BANNED / NOT FOUND"
+        for query in queries:
+            url = "https://www.googleapis.com/customsearch/v1"
+            params = {
+                "q": query,
+                "key": GOOGLE_API_KEY,
+                "cx": SEARCH_ENGINE_ID
+            }
+            r = requests.get(url, params=params, timeout=10)
+            data = r.json()
 
-        # Look for profile link in results
-        for item in data["items"]:
-            if f"instagram.com/{username.lower()}" in item["link"].lower():
-                return "ACTIVE"
+            if "items" not in data:
+                continue  # try next query
 
-        return "BANNED / NOT FOUND"
+            for item in data["items"]:
+                link = item["link"].lower()
+                if link.startswith("https://www.instagram.com/"):
+                    # extract just the username part
+                    profile = link.split("instagram.com/")[1].split("/")[0]
+                    if profile == username:
+                        return "ACTIVE"
+
+        # if all queries tried and no exact match found
+        return "NOT INDEXED / POSSIBLY BANNED"
 
     except Exception as e:
         return f"ERROR: {e}"
@@ -191,6 +201,7 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
 
