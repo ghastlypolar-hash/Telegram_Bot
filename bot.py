@@ -41,11 +41,10 @@ def save_watchlists():
 
 # Check Instagram account status
 def check_account_status(username):
-    url = "https://instagram-scraper-stable-api.p.rapidapi.com/search_ig.php"
+    url = "https://instagram-scraper-stable-api.p.rapidapi.com/ig_profile.php"
     headers = {
-        "x-rapidapi-key": os.environ.get("RAPIDAPI_KEY"),  # put your key in env
-        "x-rapidapi-host": "instagram-scraper-stable-api.p.rapidapi.com",
-        "Content-Type": "application/x-www-form-urlencoded"
+        "x-rapidapi-key": os.environ.get("RAPIDAPI_KEY"),
+        "x-rapidapi-host": "instagram-scraper-stable-api.p.rapidapi.com"
     }
     payload = {"username": username}
 
@@ -53,11 +52,11 @@ def check_account_status(username):
         r = requests.post(url, data=payload, headers=headers, timeout=10)
         data = r.json()
 
-        # ✅ If the API finds the username
-        if "user" in data and data["user"]:
+        # ✅ If profile data exists
+        if "profile" in data and data["profile"]:
             return "ACTIVE"
 
-        # ❌ If no user found
+        # ❌ If no profile found
         return "BANNED / NOT FOUND"
 
     except Exception as e:
@@ -160,3 +159,4 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
