@@ -61,6 +61,7 @@ def check_account_status(username):
             f"instagram.com/{username}"
         ]
 
+        # --- Step 1: Try Google API first ---
         for query in queries:
             url = "https://www.googleapis.com/customsearch/v1"
             params = {
@@ -71,23 +72,31 @@ def check_account_status(username):
             r = requests.get(url, params=params, timeout=10)
             data = r.json()
 
-            if "items" not in data:
-                continue  # try next query
+            if "items" in data:
+                for item in data["items"]:
+                    link = item["link"].lower()
+                    if link.startswith("https://www.instagram.com/"):
+                        profile = link.split("instagram.com/")[1].split("/")[0]
+                        if profile == username:
+                            return "ACTIVE (Google)"
 
-            for item in data["items"]:
-                link = item["link"].lower()
-                if link.startswith("https://www.instagram.com/"):
-                    # extract just the username part
-                    profile = link.split("instagram.com/")[1].split("/")[0]
-                    if profile == username:
-                        return "ACTIVE"
+        # --- Step 2: Fallback to direct Instagram check ---
+        insta_url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
+        insta_res = requests.get(insta_url, headers=headers, timeout=10)
 
-        # if all queries tried and no exact match found
-        return "NOT INDEXED / POSSIBLY BANNED"
+        if insta_res.status_code == 200:
+            return "ACTIVE (Direct)"
+        elif insta_res.status_code == 404:
+            return "BANNED / NOT FOUND"
+        else:
+            return f"ERROR: Instagram returned {insta_res.status_code}"
 
     except Exception as e:
         return f"ERROR: {e}"
-
+        
 # Telegram commands
 async def add_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
@@ -225,6 +234,7 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
 
 
