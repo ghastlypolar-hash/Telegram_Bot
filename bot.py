@@ -41,7 +41,7 @@ def save_watchlists():
 
 # Check Instagram account status
 def check_account_status(username):
-    url = "https://instagram-scraper-stable-api.p.rapidapi.com/ig_profile.php"
+    url = "https://instagram-scraper-stable-api.p.rapidapi.com/search_ig.php"
     headers = {
         "x-rapidapi-key": os.environ.get("RAPIDAPI_KEY"),
         "x-rapidapi-host": "instagram-scraper-stable-api.p.rapidapi.com"
@@ -159,4 +159,5 @@ if __name__ == "__main__":
     # Start the Telegram bot
 
     app.run_polling()
+
 
