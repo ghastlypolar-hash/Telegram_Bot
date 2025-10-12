@@ -1,57 +1,108 @@
-import requests
+import os
 import json
 import time
-import os
 import threading
+import requests
+
 from flask import Flask
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+import io
+
+# ——— Config & IDs ———
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 SEARCH_ENGINE_ID = os.environ.get("SEARCH_ENGINE_ID")
-#BOT_TOKEN = "8382132782:AAEUK3WKhF7HzNlvOLVhl51O500JEE5u8Lg"
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-WATCHLIST_FILE = "watchlist.json"
+
+# These are your shared Drive file IDs
+WATCHLIST_FILE_ID = "1CH5m1oIMb_KgmugIGHXKDrWnVKJ3UL8x"
+STATUS_CACHE_FILE_ID = "139foNUDAX2-OqJzGbCMfioqSX-rLPiVp"
+
 CHECK_INTERVAL = 10  # minutes
 
 flask_app = Flask("")
-
 
 @flask_app.route("/")
 def home():
     return "Bot is running!"
 
-
 def run_flask():
     flask_app.run(host="0.0.0.0", port=8080)
 
 
-# Load or initialize watchlists (per user)
+# ——— Google Drive helper setup ———
+
+def get_drive_service():
+    # Path to service account credentials (uploaded to Render)
+    creds_path = "/opt/render/project/src/service_account.json"
+    credentials = service_account.Credentials.from_service_account_file(
+        creds_path,
+        scopes=["https://www.googleapis.com/auth/drive"]
+    )
+    return build("drive", "v3", credentials=credentials)
+
+drive_service = get_drive_service()
+
+def download_json_from_drive(file_id):
+    """Download JSON file from Drive, return as Python object (dict)."""
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+    while done is False:
+        status, done = downloader.next_chunk()
+        # print(f"Download {int(status.progress()*100)}%")  # optional
+    fh.seek(0)
+    text = fh.read().decode("utf-8")
+    return json.loads(text)
+
+def upload_json_to_drive(file_id, data_obj):
+    """Upload (overwrite) JSON content to the Drive file."""
+    # Convert python obj to bytes
+    file_bytes = io.BytesIO(json.dumps(data_obj).encode("utf-8"))
+    media_body = MediaIoBaseUpload(file_bytes, mimetype="application/json", resumable=True)
+    updated = drive_service.files().update(
+        fileId=file_id,
+        media_body=media_body
+    ).execute()
+    return updated
+
+
+# ——— Load or initialize data ———
+
 try:
-    with open(WATCHLIST_FILE, "r") as f:
-        watchlists = json.load(f)
-except FileNotFoundError:
+    watchlists = download_json_from_drive(WATCHLIST_FILE_ID)
+except Exception as e:
+    print("Failed to load watchlists from Drive:", e)
     watchlists = {}
 
-# ------------------- NEW: status cache -------------------
 try:
-    with open("status_cache.json", "r") as f:
-        status_cache = json.load(f)
-except FileNotFoundError:
+    status_cache = download_json_from_drive(STATUS_CACHE_FILE_ID)
+except Exception as e:
+    print("Failed to load status_cache from Drive:", e)
     status_cache = {}
 
-def save_status_cache():
-    with open("status_cache.json", "w") as f:
-        json.dump(status_cache, f)
-# ---------------------------------------------------------
+# ——— Save helpers ———
 
-# Save watchlists
 def save_watchlists():
-    with open(WATCHLIST_FILE, "w") as f:
-        json.dump(watchlists, f)
+    try:
+        upload_json_to_drive(WATCHLIST_FILE_ID, watchlists)
+    except Exception as e:
+        print("Error saving watchlists to Drive:", e)
+
+def save_status_cache():
+    try:
+        upload_json_to_drive(STATUS_CACHE_FILE_ID, status_cache)
+    except Exception as e:
+        print("Error saving status_cache to Drive:", e)
 
 
-# Check Instagram account status
+# ——— Instagram account status check function (unchanged) ———
+
 def check_account_status(username):
     try:
         username = username.lower()
@@ -61,7 +112,7 @@ def check_account_status(username):
             f"instagram.com/{username}"
         ]
 
-        # --- Step 1: Try Google API first ---
+        # Try Google API
         for query in queries:
             url = "https://www.googleapis.com/customsearch/v1"
             params = {
@@ -80,24 +131,24 @@ def check_account_status(username):
                         if profile == username:
                             return "ACTIVE (Google)"
 
-        # --- Step 2: Fallback to direct Instagram check ---
+        # Fallback: direct Instagram
         insta_url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
         headers = {
             "User-Agent": "Mozilla/5.0"
         }
         insta_res = requests.get(insta_url, headers=headers, timeout=10)
-
         if insta_res.status_code == 200:
             return "ACTIVE (Direct)"
         elif insta_res.status_code == 404:
             return "BANNED / NOT FOUND"
         else:
             return f"ERROR: Instagram returned {insta_res.status_code}"
-
     except Exception as e:
         return f"ERROR: {e}"
-        
-# Telegram commands
+
+
+# ——— Telegram command handlers ———
+
 async def add_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     if chat_id not in watchlists:
@@ -110,7 +161,6 @@ async def add_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
         watchlists[chat_id].append(username)
         save_watchlists()
 
-        # Immediately check status
         current_status = check_account_status(username)
         if chat_id not in status_cache:
             status_cache[chat_id] = {}
@@ -121,9 +171,7 @@ async def add_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"✅ Added {username} to your watchlist.\nStatus: {current_status}"
         )
     else:
-        await update.message.reply_text(
-            f"{username} is already in your watchlist."
-        )
+        await update.message.reply_text(f"{username} is already in your watchlist.")
 
 async def remove_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
@@ -136,20 +184,16 @@ async def remove_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if username in watchlists[chat_id]:
         watchlists[chat_id].remove(username)
         save_watchlists()
-        await update.message.reply_text(
-            f"❌ Removed {username} from your watchlist.")
+        await update.message.reply_text(f"❌ Removed {username} from your watchlist.")
     else:
-        await update.message.reply_text(
-            f"{username} not found in your watchlist.")
+        await update.message.reply_text(f"{username} not found in your watchlist.")
 
 async def list_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.effective_chat.id)
     if chat_id not in watchlists or not watchlists[chat_id]:
         await update.message.reply_text("📭 Your watchlist is empty.")
     else:
-        await update.message.reply_text("📌 Your Watchlist:\n" +
-                                        "\n".join(watchlists[chat_id]))
-
+        await update.message.reply_text("📌 Your Watchlist:\n" + "\n".join(watchlists[chat_id]))
 
 async def check_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -160,19 +204,14 @@ async def check_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔎 {username} → {status}")
 
 
-# Background monitoring
-# Background monitoring with safeguard
 async def monitor_accounts(context: ContextTypes.DEFAULT_TYPE):
     for chat_id, usernames in watchlists.items():
         if chat_id not in status_cache:
             status_cache[chat_id] = {}
         for username in usernames:
             current_status = check_account_status(username)
-
-            # Get last known status
             last_status = status_cache[chat_id].get(username)
 
-            # If this is the first time, store it and continue
             if last_status is None:
                 status_cache[chat_id][username] = {
                     "confirmed": current_status,
@@ -181,16 +220,13 @@ async def monitor_accounts(context: ContextTypes.DEFAULT_TYPE):
                 save_status_cache()
                 continue
 
-            # Handle the dict format
             if isinstance(last_status, str):
-                # Upgrade old format to new dict format
                 last_status = {
                     "confirmed": last_status,
                     "pending": last_status
                 }
                 status_cache[chat_id][username] = last_status
 
-            # If current status == pending (2nd time), confirm and alert if changed
             if current_status == last_status["pending"]:
                 if current_status != last_status["confirmed"]:
                     status_cache[chat_id][username]["confirmed"] = current_status
@@ -200,11 +236,10 @@ async def monitor_accounts(context: ContextTypes.DEFAULT_TYPE):
                         text=f"⚠ ALERT: {username} status changed → {current_status}"
                     )
             else:
-                # First mismatch, store it as pending
                 status_cache[chat_id][username]["pending"] = current_status
                 save_status_cache()
 
-# Store chat IDs whenever someone interacts with the bot
+
 async def register_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     if "chat_ids" not in context.application.bot_data:
@@ -212,30 +247,19 @@ async def register_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat_id not in context.application.bot_data["chat_ids"]:
         context.application.bot_data["chat_ids"].append(chat_id)
 
-# Main
+
+# ——— Main ———
+
 app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-# Handlers
 app.add_handler(CommandHandler("add", add_account))
 app.add_handler(CommandHandler("remove", remove_account))
 app.add_handler(CommandHandler("list", list_accounts))
 app.add_handler(CommandHandler("check", check_account))
-app.add_handler(CommandHandler("start",
-                               register_chat))  # registers chat automatically
+app.add_handler(CommandHandler("start", register_chat))
 
-app.job_queue.run_repeating(monitor_accounts,
-                            interval=CHECK_INTERVAL * 60,
-                            first=10)
+app.job_queue.run_repeating(monitor_accounts, interval=CHECK_INTERVAL * 60, first=10)
 
 if __name__ == "__main__":
-    # Start Flask server in another thread
     threading.Thread(target=run_flask).start()
-
-    # Start the Telegram bot
-
     app.run_polling()
-
-
-
-
-
