@@ -132,7 +132,7 @@ def check_account_status(username):
                             return "ACTIVE (Google)"
 
         # Fallback: direct Instagram
-        insta_url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
+        insta_url = f"https://www.instagram.com/{username}/
         headers = {
             "User-Agent": "Mozilla/5.0"
         }
@@ -263,3 +263,4 @@ app.job_queue.run_repeating(monitor_accounts, interval=CHECK_INTERVAL * 60, firs
 if __name__ == "__main__":
     threading.Thread(target=run_flask).start()
     app.run_polling()
+
